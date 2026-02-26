@@ -17,7 +17,8 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /home/ubuntu/Telegram-financial-bot
-            git pull
+            git fetch origin main
+            git reset --hard origin/main
             pkill -f "python3 bot.py" || true
             screen -dmS financebot python3 bot.py
             echo "✅ Bot restarted successfully"
