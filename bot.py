@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
-from typing import Dict
 from telegram import Update, BotCommand
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -673,7 +672,7 @@ async def summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ending_balance = None
 
     # Group by category
-    cats: Dict[str, float] = {}
+    cats: dict[str, float] = {}
     for r in rows:
         if r["type"] == "spend":
             cats[r["category"]] = cats.get(r["category"], 0) + r["amount"]
@@ -761,7 +760,7 @@ def generate_weekly_report() -> str:
     total_income = sum(r["amount"] for r in rows if r["type"] == "income")
     
     # Top spending categories
-    cats: Dict[str, float] = {}
+    cats: dict[str, float] = {}
     for r in rows:
         if r["type"] == "spend":
             cats[r["category"]] = cats.get(r["category"], 0) + r["amount"]

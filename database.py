@@ -8,7 +8,7 @@ from __future__ import annotations
 import sqlite3
 import os
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional
 
 DB_PATH = os.getenv("DB_PATH", "finance.db")
 
@@ -71,7 +71,7 @@ class Database:
                 (creditor.lower(), debtor.lower(), round(amount, 2), description)
             )
 
-    def get_all_debts(self) -> List[Dict]:
+    def get_all_debts(self) -> list[dict]:
         """Return all unsettled debts as dicts."""
         with self._conn() as conn:
             rows = conn.execute(
@@ -147,14 +147,14 @@ class Database:
                     (round(abs(amount), 2), t_type, category, description)
                 )
 
-    def get_transactions(self, limit: int = 10) -> List[Dict]:
+    def get_transactions(self, limit: int = 10) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM transactions ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def get_monthly_transactions(self, year: int, month: int) -> List[Dict]:
+    def get_monthly_transactions(self, year: int, month: int) -> list[dict]:
         prefix = f"{year}-{month:02d}"
         with self._conn() as conn:
             rows = conn.execute(
@@ -231,7 +231,7 @@ class Database:
                 (category.lower(), round(amount, 2))
             )
 
-    def get_budgets(self) -> Dict[str, float]:
+    def get_budgets(self) -> dict[str, float]:
         with self._conn() as conn:
             rows = conn.execute("SELECT category, amount FROM budgets").fetchall()
         return {r["category"]: float(r["amount"]) for r in rows}

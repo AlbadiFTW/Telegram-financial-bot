@@ -11,14 +11,14 @@ from __future__ import annotations
 import csv
 import io
 import re
-from typing import Optional, List, Dict, Tuple, Set
+from typing import Optional
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DEBT SETTLEMENT MATH
 # ══════════════════════════════════════════════════════════════════════════════
 
-def compute_balances(debt_rows: List[Dict]) -> Dict[str, float]:
+def compute_balances(debt_rows: list[dict]) -> dict[str, float]:
     """
     Given raw debt rows [{creditor, debtor, amount}], compute net balance
     per person from "me"'s perspective.
@@ -48,7 +48,7 @@ def compute_balances(debt_rows: List[Dict]) -> Dict[str, float]:
     return {k: round(v, 2) for k, v in net.items() if abs(v) >= 0.01}
 
 
-def minimal_transfers(balances: Dict[str, float]) -> List[Tuple[str, str, float]]:
+def minimal_transfers(balances: dict[str, float]) -> list[tuple[str, str, float]]:
     """
     Compute the minimum number of transfers to settle all debts.
 
@@ -60,14 +60,14 @@ def minimal_transfers(balances: Dict[str, float]) -> List[Tuple[str, str, float]
 
     Returns: [(payer, receiver, amount), ...]
     """
-    creditors: List[list] = sorted(
+    creditors: list[list] = sorted(
         [[v, k] for k, v in balances.items() if v > 0], reverse=True
     )
-    debtors: List[list] = sorted(
+    debtors: list[list] = sorted(
         [[abs(v), k] for k, v in balances.items() if v < 0], reverse=True
     )
 
-    transfers: List[Tuple[str, str, float]] = []
+    transfers: list[tuple[str, str, float]] = []
     i, j = 0, 0
 
     while i < len(creditors) and j < len(debtors):
@@ -100,7 +100,7 @@ _DEBIT_COLS  = {"debit", "withdrawal", "سحب"}
 _CREDIT_COLS = {"credit", "deposit", "إيداع"}
 
 
-def _find_col(headers: List[str], candidates: Set[str]) -> Optional[int]:
+def _find_col(headers: list[str], candidates: set[str]) -> Optional[int]:
     for i, h in enumerate(headers):
         if h.strip().lower() in candidates:
             return i
@@ -116,7 +116,7 @@ def _parse_amount(value: str) -> Optional[float]:
         return None
 
 
-def parse_csv_transactions(csv_text: str) -> Tuple[List[Dict], List[str]]:
+def parse_csv_transactions(csv_text: str) -> tuple[list[dict], list[str]]:
     """
     Parse a CSV bank export into a list of transaction dicts.
 
@@ -152,8 +152,8 @@ def parse_csv_transactions(csv_text: str) -> Tuple[List[Dict], List[str]]:
     debit_col  = _find_col(headers, _DEBIT_COLS)
     credit_col = _find_col(headers, _CREDIT_COLS)
 
-    transactions: List[Dict] = []
-    errors: List[str]        = []
+    transactions: list[dict] = []
+    errors: list[str]        = []
 
     for row in rows[header_idx + 1:]:
         if not any(cell.strip() for cell in row):
@@ -192,7 +192,7 @@ def parse_csv_transactions(csv_text: str) -> Tuple[List[Dict], List[str]]:
 # AUTO-CATEGORIZATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-_CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+_CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "food": [
         "restaurant", "cafe", "coffee", "starbucks", "mcdonald", "kfc", "burger",
         "pizza", "subway", "shawarma", "lunch", "dinner", "breakfast", "food",
