@@ -74,64 +74,71 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @owner_only
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg1 = (
-        "📖 *Help Guide*\n\n"
+        "📖 *Help Guide — Part 1/4*\n\n"
         "🤝 *SHARED EXPENSES*\n"
         "Track debts and shared costs:\n\n"
         "*Recording Expenses:*\n"
-        "`/paid 50 dinner alice` — You paid for alice\n"
-        "`/owe alice 50 lunch` — You owe alice\n"
-        "`/owes alice 50 movie` — alice owes you\n\n"
+        "• `/paid 50 dinner alice` — You paid for alice\n"
+        "• `/owe alice 50 lunch` — You owe alice\n"
+        "• `/owes alice 50 movie` — alice owes you\n\n"
         "*Managing Debts:*\n"
-        "`/balances` — See who owes whom\n"
-        "`/settle` — Get settlement plan\n"
-        "`/markpaid alice 50` — Clear a debt\n"
-        "`/history` — Recent transactions\n"
-        "`/clearall` — ⚠️ Reset everything"
+        "• `/balances` — See who owes whom\n"
+        "• `/settle` — Get settlement plan\n"
+        "• `/markpaid alice 50` — Clear a debt\n"
+        "• `/clearall` — ⚠️ Reset everything"
     )
     
     msg2 = (
-        "💳 *PERSONAL FINANCE*\n"
-        "Track your money & budgets:\n\n"
+        "💳 *Help Guide — Part 2/4*\n"
+        "*BALANCE & SPENDING*\n\n"
         "*Balance:*\n"
-        "`/setbalance 5000` — Set your balance\n"
-        "`/balance` — Check balance\n"
-        "`/fixbalance 6500` — Correct balance\n"
-        "`/adjustbalance +500` — Adjust by amount\n\n"
-        "*Spending:*\n"
-        "`/spend 25 food groceries` — Log expense\n"
-        "`/income 100 bonus` — Log income\n"
-        "`/history [n]` — Show last n transactions (with IDs)\n"
-        "`/delete <id>` — Delete a transaction by ID\n"
-        "`/edit <id> [amt] [cat] [desc]` — Edit transaction\n"
-        "`/clearcategory <cat> [month]` — Clear entire category\n\n"
-        "*Budgets & Reports:*\n"
-        "`/budget food 300` — Set monthly limit\n"
-        "`/budgets` — View budget usage\n"
-        "`/deletebudget <category>` — Remove a budget\n"
-        "`/summary [month]` — Monthly overview with balance flow\n"
-        "`/ytd [year]` — Year-to-date with monthly breakdown\n"
-        "`/categories` — View all categories"
+        "• `/setbalance 5000` — Set your balance\n"
+        "• `/balance` — Check balance\n"
+        "• `/fixbalance 6500` — Correct balance\n"
+        "• `/adjustbalance +500` — Adjust by amount\n\n"
+        "*Spending & Transactions:*\n"
+        "• `/spend 25 food groceries` — Log expense\n"
+        "• `/income 100 bonus` — Log income\n"
+        "• `/history [n]` — Show last n transactions\n"
+        "• `/delete <id>` — Delete transaction by ID\n"
+        "• `/edit <id> [amt] [cat]` — Modify transaction"
     )
     
     msg3 = (
-        "📊 *REPORTS & IMPORT*\n\n"
+        "📊 *Help Guide — Part 3/4*\n"
+        "*CATEGORIES & BUDGETS*\n\n"
+        "*Manage Spending:*\n"
+        "• `/clearcategory <cat> [month]` — Clear all in category\n"
+        "• `/categories` — View available categories\n\n"
+        "*Manage Budgets:*\n"
+        "• `/budget food 300` — Set monthly limit\n"
+        "• `/budgets` — View all budgets\n"
+        "• `/deletebudget <cat>` — Remove budget\n\n"
+        "*Reports:*\n"
+        "• `/summary [month]` — Monthly breakdown\n"
+        "• `/ytd [year]` — Year-to-date analysis"
+    )
+    
+    msg4 = (
+        "📋 *Help Guide — Part 4/4*\n"
+        "*REPORTS & IMPORT*\n\n"
         "*Weekly Report:*\n"
-        "`/weeklyreport` — Full snapshot\n"
-        "_Auto-sent Fridays 9 AM GST_\n\n"
-        f"💱 Currency: `{CURRENCY}`\n\n"
+        "• `/weeklyreport` — Full snapshot\n"
+        "  _(Auto: Fridays 9 AM GST)_\n\n"
+        f"💱 *Currency:* `{CURRENCY}`\n\n"
         "*CSV Import:*\n"
-        "Send a `.csv` file with columns:\n"
-        "`date,amount,category,description`\n\n"
-        "_Example row:_\n"
-        "`2026-02-26,50.00,food,groceries`\n\n"
+        "Send `.csv` file with columns:\n"
+        "`date,amount,category,description`\n"
+        "_Example:_ `2026-02-26,50.00,food,groceries`\n\n"
         "*Smart Alerts:*\n"
-        "🟡 20% / 🔴 15% / 🚨 5% balance\n"
-        "🟡 75% / 🟠 90% / 🔴 100% budget"
+        "Balance: 🟡20% 🔴15% 🚨5% remaining\n"
+        "Budget: 🟡75% 🟠90% 🔴100%"
     )
     
     await update.message.reply_text(msg1, parse_mode="Markdown")
     await update.message.reply_text(msg2, parse_mode="Markdown")
     await update.message.reply_text(msg3, parse_mode="Markdown")
+    await update.message.reply_text(msg4, parse_mode="Markdown")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SHARED EXPENSES
@@ -696,8 +703,11 @@ async def budgets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         spent = db.get_monthly_spend(cat, today.year, today.month)
         pct   = (spent / limit * 100) if limit else 0
         bar   = _progress_bar(pct)
-        status = "🔴 OVER" if pct > 100 else ("🟡" if pct > 80 else "🟢")
-        lines.append(f"{status} *{cat}*\n  {bar} {pct:.0f}%\n  Spent {fmt(spent)} / {fmt(limit)}\n")
+        status = "🔴 OVER" if pct > 100 else ("�" if pct > 90 else ("🟡" if pct > 80 else "🟢"))
+        lines.append(f"{status} *{cat}*")
+        lines.append(f"   {bar} {pct:.0f}%")
+        lines.append(f"   {fmt(spent)} / {fmt(limit)}")
+        lines.append("")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -764,34 +774,34 @@ async def summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Balance flow
     if starting_balance is not None:
         lines.append(f"🏦 *Balance Flow:*")
-        lines.append(f"  Start of month: *{fmt(starting_balance)}*")
-        lines.append(f"  + Income: *{fmt(total_income)}*")
-        lines.append(f"  - Spent: *{fmt(total_spend)}*")
-        lines.append(f"  = End of month: *{fmt(ending_balance)}*")
+        lines.append(f"   Start: *{fmt(starting_balance)}*")
+        lines.append(f"   + Income:  *{fmt(total_income)}*")
+        lines.append(f"   − Spent:   *{fmt(total_spend)}*")
+        lines.append(f"   = End:     *{fmt(ending_balance)}*")
+        lines.append("")
     else:
-        lines.append(f"💰 Income: *{fmt(total_income)}*")
-        lines.append(f"💸 Spent:  *{fmt(total_spend)}*")
-    
-    lines.append(f"📈 Net Change: *{fmt(net_change)}*\n")
+        lines.append(f"💰 Income:  *{fmt(total_income)}*")
+        lines.append(f"💸 Spent:   *{fmt(total_spend)}*")
+        lines.append(f"📈 Net:     *{fmt(net_change)}*")
+        lines.append("")
     
     # Category breakdown
-    lines.append("*Spending by Category:*")
-    for cat, amt in sorted(cats.items(), key=lambda x: -x[1]):
-        pct = amt / total_spend * 100 if total_spend else 0
-        lines.append(f"  • {cat}: *{fmt(amt)}* ({pct:.0f}%)")
+    if cats:
+        lines.append("*Spending by Category:*")
+        for cat, amt in sorted(cats.items(), key=lambda x: -x[1]):
+            pct = amt / total_spend * 100 if total_spend else 0
+            lines.append(f"   • {cat}: *{fmt(amt)}* ({pct:.0f}%)")
+        lines.append("")
 
     # Budget status
     budgets = db.get_budgets()
-    budget_warnings = []
     if budgets:
-        lines.append("")
         lines.append("*Budget Status:*")
         for cat, limit in budgets.items():
             spent = db.get_monthly_spend(cat, year, month)
             pct = (spent / limit * 100) if limit else 0
-            bar = _progress_bar(pct)
             status = "🔴" if pct > 100 else ("🟠" if pct > 90 else ("🟡" if pct > 75 else "🟢"))
-            lines.append(f"  {status} {cat}: {fmt(spent)}/{fmt(limit)} ({pct:.0f}%)")
+            lines.append(f"   {status} {cat}: {fmt(spent)} / {fmt(limit)} ({pct:.0f}%)")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -823,9 +833,10 @@ async def ytd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ytd_income = sum(m['income'] for m in monthly_data.values())
     
     lines = [f"📊 *Year-to-Date Summary — {year}*\n"]
-    lines.append(f"💰 YTD Income: *{fmt(ytd_income)}*")
-    lines.append(f"💸 YTD Spent: *{fmt(ytd_spend)}*")
-    lines.append(f"📈 YTD Net: *{fmt(ytd_income - ytd_spend)}*\n")
+    lines.append(f"💰 YTD Income:   *{fmt(ytd_income)}*")
+    lines.append(f"💸 YTD Spent:    *{fmt(ytd_spend)}*")
+    lines.append(f"📈 YTD Net:      *{fmt(ytd_income - ytd_spend)}*")
+    lines.append("")
     
     lines.append("*Monthly Breakdown:*")
     month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -840,17 +851,14 @@ async def ytd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         daily_avg = data['spend'] / days_in_month if days_in_month > 0 else 0
         
         lines.append(
-            f"  {month_names[month]}: "
-            f"💰{fmt(data['income'])} | "
-            f"💸{fmt(data['spend'])} | "
-            f"📈{fmt(month_net)} | "
-            f"Avg: {fmt(daily_avg)}/day"
+            f"  {month_names[month]}: 💰{fmt(data['income'])} | 💸{fmt(data['spend'])} | 📈{fmt(month_net)} | ⌛{fmt(daily_avg)}/day"
         )
+    
+    lines.append("")
     
     # Budget comparison
     budgets = db.get_budgets()
     if budgets:
-        lines.append("")
         lines.append("*Budget Performance (YTD):*")
         for cat, monthly_limit in sorted(budgets.items()):
             ytd_cat_spend = sum(
@@ -860,8 +868,8 @@ async def ytd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ytd_budget = monthly_limit * today.month  # Total budget for months passed
             pct = (ytd_cat_spend / ytd_budget * 100) if ytd_budget > 0 else 0
             status = "🔴" if pct > 100 else ("🟠" if pct > 90 else ("🟡" if pct > 75 else "🟢"))
-            lines.append(f"  {status} *{cat}*: {fmt(ytd_cat_spend)}/{fmt(ytd_budget)} ({pct:.0f}%)")
-    
+            lines.append(f"  {status} {cat}: {fmt(ytd_cat_spend)} / {fmt(ytd_budget)} ({pct:.0f}%)")
+
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
