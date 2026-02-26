@@ -3,6 +3,8 @@
 Telegram bot for tracking shared expenses, debts, and personal bank balance.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from datetime import datetime, date, time

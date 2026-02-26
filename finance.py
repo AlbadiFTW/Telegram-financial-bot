@@ -6,6 +6,8 @@ finance.py — Pure algorithms (no DB, no Telegram).
   • categorize_description — keyword-based auto-category
 """
 
+from __future__ import annotations
+
 import csv
 import io
 import re
