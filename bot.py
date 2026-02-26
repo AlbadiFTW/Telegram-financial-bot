@@ -336,14 +336,20 @@ async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Transaction ID must be a number.")
         return
     
+    logger.info(f"Attempting to delete transaction #{tx_id}")
+    
     # Get transaction before deletion
     tx_data = db.get_transaction_by_id(tx_id)
+    logger.info(f"Transaction found: {tx_data}")
     
     if not tx_data:
         await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
         return
     
-    if db.delete_transaction(tx_id):
+    result = db.delete_transaction(tx_id)
+    logger.info(f"Delete result: {result}")
+    
+    if result:
         icon = "💸" if tx_data["type"] == "spend" else "💰"
         await update.message.reply_text(
             f"✅ Deleted transaction #{tx_id}\n"
@@ -372,8 +378,11 @@ async def edit_transaction_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Transaction ID must be a number.")
         return
     
+    logger.info(f"Attempting to edit transaction #{tx_id}")
+    
     # Get original transaction
     tx_data = db.get_transaction_by_id(tx_id)
+    logger.info(f"Transaction found: {tx_data}")
     
     if not tx_data:
         await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
@@ -402,8 +411,11 @@ async def edit_transaction_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     description = " ".join(description_parts) if description_parts else None
     
+    logger.info(f"Edit params - amount: {amount}, category: {category}, description: {description}")
+    
     # Update transaction
     updated = db.edit_transaction(tx_id, amount, category, description)
+    logger.info(f"Update result: {updated}")
     
     if updated:
         icon = "💸" if updated["type"] == "spend" else "💰"
