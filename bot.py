@@ -324,11 +324,8 @@ async def history(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
-@owner_only
 async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/delete 42 — Delete a transaction by ID"""
-    logger.info(f"DELETE command received with args: {ctx.args}")
-    
     if not ctx.args:
         await update.message.reply_text("Usage: `/delete <transaction_id>`\nGet transaction IDs from `/history`", parse_mode="Markdown")
         return
@@ -339,20 +336,14 @@ async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Transaction ID must be a number.")
         return
     
-    logger.info(f"Attempting to delete transaction #{tx_id}")
-    
     # Get transaction before deletion
     tx_data = db.get_transaction_by_id(tx_id)
-    logger.info(f"Transaction found: {tx_data}")
     
     if not tx_data:
         await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
         return
     
-    result = db.delete_transaction(tx_id)
-    logger.info(f"Delete result: {result}")
-    
-    if result:
+    if db.delete_transaction(tx_id):
         icon = "💸" if tx_data["type"] == "spend" else "💰"
         await update.message.reply_text(
             f"✅ Deleted transaction #{tx_id}\n"
@@ -381,11 +372,8 @@ async def edit_transaction_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Transaction ID must be a number.")
         return
     
-    logger.info(f"Attempting to edit transaction #{tx_id}")
-    
     # Get original transaction
     tx_data = db.get_transaction_by_id(tx_id)
-    logger.info(f"Transaction found: {tx_data}")
     
     if not tx_data:
         await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
@@ -414,11 +402,8 @@ async def edit_transaction_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     description = " ".join(description_parts) if description_parts else None
     
-    logger.info(f"Edit params - amount: {amount}, category: {category}, description: {description}")
-    
     # Update transaction
     updated = db.edit_transaction(tx_id, amount, category, description)
-    logger.info(f"Update result: {updated}")
     
     if updated:
         icon = "💸" if updated["type"] == "spend" else "💰"
