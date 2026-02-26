@@ -20,5 +20,6 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             pkill -f "python3 bot.py" || true
-            screen -dmS financebot python3 bot.py
+            sleep 2
+            nohup python3 bot.py > bot.log 2>&1 &
             echo "✅ Bot restarted successfully"
