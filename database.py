@@ -235,3 +235,62 @@ class Database:
         with self._conn() as conn:
             rows = conn.execute("SELECT category, amount FROM budgets").fetchall()
         return {r["category"]: float(r["amount"]) for r in rows}
+
+    def delete_budget(self, category: str) -> bool:
+        """Delete a budget. Returns True if deleted, False if not found."""
+        with self._conn() as conn:
+            cursor = conn.execute("DELETE FROM budgets WHERE category = ?", (category.lower(),))
+        return cursor.rowcount > 0
+
+    def delete_transaction(self, transaction_id: int) -> bool:
+        """Delete a transaction by ID. Returns True if deleted, False if not found."""
+        current_bal = self.get_balance()
+        with self._conn() as conn:
+            # First, get the transaction details
+            row = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
+            if not row:
+                return False
+            
+            # Delete it
+            cursor = conn.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
+            
+            # Reverse the balance effect
+            if current_bal is not None:
+                if row["type"] == "spend":
+                    self.adjust_balance(row["amount"])  # Add back the spent amount
+                else:  # income
+                    self.adjust_balance(-row["amount"])  # Remove the income
+        
+        return True
+
+    def delete_category_transactions(self, category: str, year: int, month: int) -> int:
+        """Delete all transactions in a category for a specific month. Returns count deleted."""
+        prefix = f"{year}-{month:02d}"
+        current_bal = self.get_balance()
+        
+        with self._conn() as conn:
+            # Get all transactions to reverse balance changes
+            rows = conn.execute(
+                """SELECT * FROM transactions 
+                   WHERE category = ? AND created_at LIKE ? ORDER BY created_at DESC""",
+                (category, f"{prefix}%")
+            ).fetchall()
+            
+            # Calculate total to reverse
+            total_spend = sum(r["amount"] for r in rows if r["type"] == "spend")
+            total_income = sum(r["amount"] for r in rows if r["type"] == "income")
+            
+            # Delete transactions
+            cursor = conn.execute(
+                """DELETE FROM transactions 
+                   WHERE category = ? AND created_at LIKE ?""",
+                (category, f"{prefix}%")
+            )
+            count = cursor.rowcount
+        
+        # Reverse balance effects
+        if current_bal is not None and count > 0:
+            delta = total_spend - total_income  # net to add back
+            self.adjust_balance(delta)
+        
+        return count

@@ -8,7 +8,10 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, date, time
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python 3.8 fallback
+    from backports.zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -96,11 +99,15 @@ async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "`/adjustbalance +500` — Adjust by amount\n\n"
         "*Spending:*\n"
         "`/spend 25 food groceries` — Log expense\n"
-        "`/income 100 bonus` — Log income\n\n"
+        "`/income 100 bonus` — Log income\n"
+        "`/history [n]` — Show last n transactions (with IDs)\n"
+        "`/delete <id>` — Delete a transaction by ID\n"
+        "`/clearcategory <cat> [month]` — Clear entire category\n\n"
         "*Budgets:*\n"
         "`/budget food 300` — Set monthly limit\n"
         "`/budgets` — View budget usage\n"
-        "`/summary` — Monthly overview\n"
+        "`/deletebudget <category>` — Remove a budget\n"
+        "`/summary` — Monthly overview with balance flow\n"
         "`/categories` — View all categories"
     )
     
@@ -293,7 +300,7 @@ async def markpaid(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def history(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Show last n transactions."""
+    """Show last n transactions with IDs for deletion."""
     n = int(ctx.args[0]) if ctx.args and ctx.args[0].isdigit() else 10
     rows = db.get_transactions(limit=n)
     if not rows:
@@ -302,8 +309,84 @@ async def history(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines = [f"📜 *Last {n} Transactions*\n"]
     for r in rows:
         icon = "💸" if r["type"] == "spend" else "💰"
-        lines.append(f"  {icon} *{fmt(r['amount'])}* — {r['description']} [{r['category']}]\n    _{r['created_at']}_")
+        lines.append(f"  `#{r['id']}` {icon} *{fmt(r['amount'])}* — {r['description']} [{r['category']}]\n    _{r['created_at']}_")
+    lines.append("\n💡 Use `/delete <id>` to remove a transaction")
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+@owner_only
+async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/delete 42 — Delete a transaction by ID"""
+    if not ctx.args:
+        await update.message.reply_text("Usage: `/delete <transaction_id>`\nGet transaction IDs from `/history`", parse_mode="Markdown")
+        return
+    
+    try:
+        tx_id = int(ctx.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Transaction ID must be a number.")
+        return
+    
+    # Get transaction details before deletion
+    rows = db.get_transactions(limit=1000)  # Get all to find it
+    tx_data = None
+    for r in rows:
+        if r['id'] == tx_id:
+            tx_data = r
+            break
+    
+    if not tx_data:
+        await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
+        return
+    
+    if db.delete_transaction(tx_id):
+        icon = "💸" if tx_data["type"] == "spend" else "💰"
+        await update.message.reply_text(
+            f"✅ Deleted transaction #{tx_id}\n"
+            f"{icon} *{fmt(tx_data['amount'])}* — {tx_data['description']} [{tx_data['category']}]",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(f"❌ Failed to delete transaction #{tx_id}")
+
+
+@owner_only
+async def clearcategory(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/clearcategory food or /clearcategory food 2026-02"""
+    if not ctx.args:
+        await update.message.reply_text("Usage: `/clearcategory <category> [month]`\nMonth format: `YYYY-MM` (default: current month)", parse_mode="Markdown")
+        return
+    
+    category = ctx.args[0].lower()
+    today = date.today()
+    year, month = today.year, today.month
+    
+    if len(ctx.args) > 1:
+        try:
+            y, m = ctx.args[1].split("-")
+            year, month = int(y), int(m)
+        except:
+            await update.message.reply_text("❌ Month must be in format `YYYY-MM` (e.g., `2026-02`)", parse_mode="Markdown")
+            return
+    
+    # Get spending before deletion
+    rows = db.get_monthly_transactions(year, month)
+    cat_spend = sum(r["amount"] for r in rows if r["type"] == "spend" and r["category"] == category)
+    
+    if cat_spend == 0:
+        await update.message.reply_text(f"⚠️ No spending found in *{category}* for {date(year, month, 1).strftime('%B %Y')}.", parse_mode="Markdown")
+        return
+    
+    count = db.delete_category_transactions(category, year, month)
+    if count > 0:
+        await update.message.reply_text(
+            f"✅ Cleared *{count}* transactions in *{category}*\n"
+            f"💸 Total removed: *{fmt(cat_spend)}*\n"
+            f"Month: {date(year, month, 1).strftime('%B %Y')}",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(f"❌ Failed to clear {category} transactions")
 
 
 @owner_only
@@ -538,6 +621,20 @@ async def budgets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def deletebudget(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/deletebudget food"""
+    if not ctx.args:
+        await update.message.reply_text("Usage: `/deletebudget <category>`", parse_mode="Markdown")
+        return
+    
+    category = ctx.args[0].lower()
+    if db.delete_budget(category):
+        await update.message.reply_text(f"✅ Budget for *{category}* deleted.", parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"⚠️ No budget found for *{category}*", parse_mode="Markdown")
+
+
+@owner_only
 async def summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/summary or /summary jan or /summary 2025-01"""
     today = date.today()
@@ -563,6 +660,16 @@ async def summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     total_spend  = sum(r["amount"] for r in rows if r["type"] == "spend")
     total_income = sum(r["amount"] for r in rows if r["type"] == "income")
+    net_change = total_income - total_spend
+
+    # Calculate starting and ending balance
+    current_bal = db.get_balance()
+    if current_bal is not None:
+        starting_balance = current_bal - net_change
+        ending_balance = current_bal
+    else:
+        starting_balance = None
+        ending_balance = None
 
     # Group by category
     cats: dict[str, float] = {}
@@ -571,13 +678,38 @@ async def summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             cats[r["category"]] = cats.get(r["category"], 0) + r["amount"]
 
     lines = [f"📅 *Summary — {date(year, month, 1).strftime('%B %Y')}*\n"]
-    lines.append(f"💰 Income: *{fmt(total_income)}*")
-    lines.append(f"💸 Spent:  *{fmt(total_spend)}*")
-    lines.append(f"📈 Net:    *{fmt(total_income - total_spend)}*\n")
-    lines.append("*By Category:*")
+    
+    # Balance flow
+    if starting_balance is not None:
+        lines.append(f"🏦 *Balance Flow:*")
+        lines.append(f"  Start of month: *{fmt(starting_balance)}*")
+        lines.append(f"  + Income: *{fmt(total_income)}*")
+        lines.append(f"  - Spent: *{fmt(total_spend)}*")
+        lines.append(f"  = End of month: *{fmt(ending_balance)}*")
+    else:
+        lines.append(f"💰 Income: *{fmt(total_income)}*")
+        lines.append(f"💸 Spent:  *{fmt(total_spend)}*")
+    
+    lines.append(f"📈 Net Change: *{fmt(net_change)}*\n")
+    
+    # Category breakdown
+    lines.append("*Spending by Category:*")
     for cat, amt in sorted(cats.items(), key=lambda x: -x[1]):
         pct = amt / total_spend * 100 if total_spend else 0
         lines.append(f"  • {cat}: *{fmt(amt)}* ({pct:.0f}%)")
+
+    # Budget status
+    budgets = db.get_budgets()
+    budget_warnings = []
+    if budgets:
+        lines.append("")
+        lines.append("*Budget Status:*")
+        for cat, limit in budgets.items():
+            spent = db.get_monthly_spend(cat, year, month)
+            pct = (spent / limit * 100) if limit else 0
+            bar = _progress_bar(pct)
+            status = "🔴" if pct > 100 else ("🟠" if pct > 90 else ("🟡" if pct > 75 else "🟢"))
+            lines.append(f"  {status} {cat}: {fmt(spent)}/{fmt(limit)} ({pct:.0f}%)")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -808,6 +940,8 @@ def main():
     app.add_handler(CommandHandler("settle",      settle))
     app.add_handler(CommandHandler("markpaid",    markpaid))
     app.add_handler(CommandHandler("history",     history))
+    app.add_handler(CommandHandler("delete",      delete_transaction))
+    app.add_handler(CommandHandler("clearcategory", clearcategory))
     app.add_handler(CommandHandler("clearall",    clearall))
 
     # Personal finance
@@ -819,6 +953,7 @@ def main():
     app.add_handler(CommandHandler("income",      income))
     app.add_handler(CommandHandler("budget",      set_budget))
     app.add_handler(CommandHandler("budgets",     budgets))
+    app.add_handler(CommandHandler("deletebudget", deletebudget))
     app.add_handler(CommandHandler("summary",     summary))
     app.add_handler(CommandHandler("categories",  categories))
     app.add_handler(CommandHandler("weeklyreport", weeklyreport))
