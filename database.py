@@ -294,3 +294,58 @@ class Database:
             self.adjust_balance(delta)
         
         return count
+
+    def edit_transaction(
+        self,
+        transaction_id: int,
+        amount: Optional[float] = None,
+        category: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Optional[dict]:
+        """
+        Edit a transaction by ID. Only updates provided fields.
+        Returns the updated transaction dict, or None if not found.
+        Handles balance adjustments if amount changes.
+        """
+        current_bal = self.get_balance()
+        
+        with self._conn() as conn:
+            # Get original transaction
+            row = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
+            if not row:
+                return None
+            
+            # Prepare update values
+            update_amount = amount if amount is not None else row["amount"]
+            update_category = category if category is not None else row["category"]
+            update_description = description if description is not None else row["description"]
+            
+            # Update the transaction
+            conn.execute(
+                """UPDATE transactions 
+                   SET amount = ?, category = ?, description = ?
+                   WHERE id = ?""",
+                (round(abs(update_amount), 2), update_category, update_description, transaction_id)
+            )
+            
+            # Handle balance adjustment if amount changed
+            if current_bal is not None and amount is not None and amount != row["amount"]:
+                delta = row["amount"] - amount  # Original amount minus new amount
+                if row["type"] == "spend":
+                    self.adjust_balance(delta)  # Add back difference
+                else:  # income
+                    self.adjust_balance(-delta)  # Remove difference
+            
+            # Return updated row
+            updated = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
+            return dict(updated) if updated else None
+
+    def get_yearly_transactions(self, year: int) -> list[dict]:
+        """Get all transactions for a specific year."""
+        prefix = f"{year}-"
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM transactions WHERE created_at LIKE ? ORDER BY created_at DESC",
+                (f"{prefix}%",)
+            ).fetchall()
+        return [dict(r) for r in rows]

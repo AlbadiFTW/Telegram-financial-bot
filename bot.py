@@ -102,12 +102,14 @@ async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "`/income 100 bonus` — Log income\n"
         "`/history [n]` — Show last n transactions (with IDs)\n"
         "`/delete <id>` — Delete a transaction by ID\n"
+        "`/edit <id> [amt] [cat] [desc]` — Edit transaction\n"
         "`/clearcategory <cat> [month]` — Clear entire category\n\n"
-        "*Budgets:*\n"
+        "*Budgets & Reports:*\n"
         "`/budget food 300` — Set monthly limit\n"
         "`/budgets` — View budget usage\n"
         "`/deletebudget <category>` — Remove a budget\n"
-        "`/summary` — Monthly overview with balance flow\n"
+        "`/summary [month]` — Monthly overview with balance flow\n"
+        "`/ytd [year]` — Year-to-date with monthly breakdown\n"
         "`/categories` — View all categories"
     )
     
@@ -348,6 +350,86 @@ async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(f"❌ Failed to delete transaction #{tx_id}")
+
+
+@owner_only
+async def edit_transaction_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/edit 42 25.50 food groceries - Edit transaction amount, category, and/or description"""
+    if not ctx.args:
+        await update.message.reply_text(
+            "Usage: `/edit <id> [amount] [category] [description]`\n"
+            "Only provide fields you want to change.\n"
+            "_Example:_ `/edit 42 25.50 food groceries`",
+            parse_mode="Markdown"
+        )
+        return
+    
+    try:
+        tx_id = int(ctx.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Transaction ID must be a number.")
+        return
+    
+    # Get original transaction
+    rows = db.get_transactions(limit=1000)
+    tx_data = None
+    for r in rows:
+        if r['id'] == tx_id:
+            tx_data = r
+            break
+    
+    if not tx_data:
+        await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
+        return
+    
+    # Parse arguments
+    amount = None
+    category = None
+    description_parts = []
+    
+    for i, arg in enumerate(ctx.args[1:]):
+        if i == 0:
+            try:
+                amount = float(arg)
+                continue
+            except ValueError:
+                pass
+        
+        if i == 1 or (i > 1 and category is None):
+            # Could be category or start of description
+            if arg.lower() in ["food", "transport", "shopping", "bills", "entertainment", "health", "travel", "other"]:
+                category = arg.lower()
+                continue
+        
+        description_parts.append(arg)
+    
+    description = " ".join(description_parts) if description_parts else None
+    
+    # Update transaction
+    updated = db.edit_transaction(tx_id, amount, category, description)
+    
+    if updated:
+        icon = "💸" if updated["type"] == "spend" else "💰"
+        
+        # Show what changed
+        changes = []
+        if amount is not None and amount != tx_data["amount"]:
+            changes.append(f"Amount: *{fmt(tx_data['amount'])}* → *{fmt(updated['amount'])}*")
+        if category is not None and category != tx_data["category"]:
+            changes.append(f"Category: *{tx_data['category']}* → *{updated['category']}*")
+        if description is not None and description != tx_data["description"]:
+            changes.append(f"Description: _{tx_data['description']}_ → _{updated['description']}_")
+        
+        change_text = "\n".join(changes) if changes else "_No changes made_"
+        
+        await update.message.reply_text(
+            f"✅ Updated transaction #{tx_id}\n"
+            f"{icon} {fmt(updated['amount'])} [{updated['category']}]\n\n"
+            f"{change_text}",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(f"❌ Failed to update transaction #{tx_id}")
 
 
 @owner_only
@@ -715,6 +797,75 @@ async def summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def ytd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/ytd — Year-to-date summary with monthly breakdown"""
+    today = date.today()
+    year = int(ctx.args[0]) if ctx.args and ctx.args[0].isdigit() else today.year
+    
+    # Get all transactions for the year
+    all_rows = db.get_yearly_transactions(year)
+    if not all_rows:
+        await update.message.reply_text(f"No transactions found for {year}.")
+        return
+    
+    # Group by month
+    monthly_data: dict[int, dict] = {}
+    for month in range(1, today.month + 1):
+        rows = [r for r in all_rows if r['created_at'].startswith(f"{year}-{month:02d}")]
+        monthly_data[month] = {
+            'spend': sum(r["amount"] for r in rows if r["type"] == "spend"),
+            'income': sum(r["amount"] for r in rows if r["type"] == "income"),
+            'count': len(rows)
+        }
+    
+    # Calculate YTD totals
+    ytd_spend = sum(m['spend'] for m in monthly_data.values())
+    ytd_income = sum(m['income'] for m in monthly_data.values())
+    
+    lines = [f"📊 *Year-to-Date Summary — {year}*\n"]
+    lines.append(f"💰 YTD Income: *{fmt(ytd_income)}*")
+    lines.append(f"💸 YTD Spent: *{fmt(ytd_spend)}*")
+    lines.append(f"📈 YTD Net: *{fmt(ytd_income - ytd_spend)}*\n")
+    
+    lines.append("*Monthly Breakdown:*")
+    month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    
+    for month in range(1, today.month + 1):
+        data = monthly_data[month]
+        month_net = data['income'] - data['spend']
+        
+        # Get average daily spend for the month
+        last_day = (date(year, month, 1) + (date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1))).day - 1
+        days_in_month = last_day if month != today.month else today.day
+        daily_avg = data['spend'] / days_in_month if days_in_month > 0 else 0
+        
+        lines.append(
+            f"  {month_names[month]}: "
+            f"💰{fmt(data['income'])} | "
+            f"💸{fmt(data['spend'])} | "
+            f"📈{fmt(month_net)} | "
+            f"Avg: {fmt(daily_avg)}/day"
+        )
+    
+    # Budget comparison
+    budgets = db.get_budgets()
+    if budgets:
+        lines.append("")
+        lines.append("*Budget Performance (YTD):*")
+        for cat, monthly_limit in sorted(budgets.items()):
+            ytd_cat_spend = sum(
+                r["amount"] for r in all_rows 
+                if r["type"] == "spend" and r["category"] == cat
+            )
+            ytd_budget = monthly_limit * today.month  # Total budget for months passed
+            pct = (ytd_cat_spend / ytd_budget * 100) if ytd_budget > 0 else 0
+            status = "🔴" if pct > 100 else ("🟠" if pct > 90 else ("🟡" if pct > 75 else "🟢"))
+            lines.append(f"  {status} *{cat}*: {fmt(ytd_cat_spend)}/{fmt(ytd_budget)} ({pct:.0f}%)")
+    
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+@owner_only
 async def categories(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
         "🏷️ *Spending Categories*\n\n"
@@ -941,6 +1092,7 @@ def main():
     app.add_handler(CommandHandler("markpaid",    markpaid))
     app.add_handler(CommandHandler("history",     history))
     app.add_handler(CommandHandler("delete",      delete_transaction))
+    app.add_handler(CommandHandler("edit",        edit_transaction_cmd))
     app.add_handler(CommandHandler("clearcategory", clearcategory))
     app.add_handler(CommandHandler("clearall",    clearall))
 
@@ -955,6 +1107,7 @@ def main():
     app.add_handler(CommandHandler("budgets",     budgets))
     app.add_handler(CommandHandler("deletebudget", deletebudget))
     app.add_handler(CommandHandler("summary",     summary))
+    app.add_handler(CommandHandler("ytd",         ytd))
     app.add_handler(CommandHandler("categories",  categories))
     app.add_handler(CommandHandler("weeklyreport", weeklyreport))
 
