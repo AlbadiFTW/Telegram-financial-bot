@@ -324,8 +324,11 @@ async def history(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+@owner_only
 async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/delete 42 — Delete a transaction by ID"""
+    logger.info(f"DELETE command received with args: {ctx.args}")
+    
     if not ctx.args:
         await update.message.reply_text("Usage: `/delete <transaction_id>`\nGet transaction IDs from `/history`", parse_mode="Markdown")
         return
