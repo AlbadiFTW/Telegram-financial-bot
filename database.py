@@ -173,6 +173,12 @@ class Database:
             ).fetchone()
         return float(row["total"])
 
+    def get_transaction_by_id(self, transaction_id: int) -> Optional[dict]:
+        """Get a transaction by its ID."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
+        return dict(row) if row else None
+
     # ── Balance ───────────────────────────────────────────────────────────────
 
     def get_balance(self) -> Optional[float]:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 try:
     from zoneinfo import ZoneInfo
 except ImportError:  # Python 3.8 fallback
@@ -336,13 +336,8 @@ async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Transaction ID must be a number.")
         return
     
-    # Get transaction details before deletion
-    rows = db.get_transactions(limit=1000)  # Get all to find it
-    tx_data = None
-    for r in rows:
-        if r['id'] == tx_id:
-            tx_data = r
-            break
+    # Get transaction before deletion
+    tx_data = db.get_transaction_by_id(tx_id)
     
     if not tx_data:
         await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
@@ -378,12 +373,7 @@ async def edit_transaction_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     
     # Get original transaction
-    rows = db.get_transactions(limit=1000)
-    tx_data = None
-    for r in rows:
-        if r['id'] == tx_id:
-            tx_data = r
-            break
+    tx_data = db.get_transaction_by_id(tx_id)
     
     if not tx_data:
         await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
@@ -808,19 +798,24 @@ async def summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def ytd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/ytd — Year-to-date summary with monthly breakdown"""
+    """/ytd [year] — Year-to-date summary with monthly breakdown"""
     today = date.today()
     year = int(ctx.args[0]) if ctx.args and ctx.args[0].isdigit() else today.year
+    
+    # Determine how many months to show
+    # If querying current year, show up to current month
+    # If querying past year, show all 12 months
+    max_month = today.month if year == today.year else 12
     
     # Get all transactions for the year
     all_rows = db.get_yearly_transactions(year)
     if not all_rows:
-        await update.message.reply_text(f"No transactions found for {year}.")
+        await update.message.reply_text(f"ℹ️ No transactions found for {year}.")
         return
     
     # Group by month
     monthly_data: dict[int, dict] = {}
-    for month in range(1, today.month + 1):
+    for month in range(1, max_month + 1):
         rows = [r for r in all_rows if r['created_at'].startswith(f"{year}-{month:02d}")]
         monthly_data[month] = {
             'spend': sum(r["amount"] for r in rows if r["type"] == "spend"),
@@ -841,13 +836,18 @@ async def ytd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines.append("*Monthly Breakdown:*")
     month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     
-    for month in range(1, today.month + 1):
+    for month in range(1, max_month + 1):
         data = monthly_data[month]
         month_net = data['income'] - data['spend']
         
-        # Get average daily spend for the month
-        last_day = (date(year, month, 1) + (date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1))).day - 1
-        days_in_month = last_day if month != today.month else today.day
+        # Calculate days in month
+        if month < 12:
+            next_month = date(year, month + 1, 1)
+        else:
+            next_month = date(year + 1, 1, 1)
+        last_day_of_month = (next_month - timedelta(days=1)).day
+        
+        days_in_month = last_day_of_month if month != today.month or year != today.year else today.day
         daily_avg = data['spend'] / days_in_month if days_in_month > 0 else 0
         
         lines.append(
@@ -865,7 +865,7 @@ async def ytd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 r["amount"] for r in all_rows 
                 if r["type"] == "spend" and r["category"] == cat
             )
-            ytd_budget = monthly_limit * today.month  # Total budget for months passed
+            ytd_budget = monthly_limit * max_month  # Total budget for months shown
             pct = (ytd_cat_spend / ytd_budget * 100) if ytd_budget > 0 else 0
             status = "🔴" if pct > 100 else ("🟠" if pct > 90 else ("🟡" if pct > 75 else "🟢"))
             lines.append(f"  {status} {cat}: {fmt(ytd_cat_spend)} / {fmt(ytd_budget)} ({pct:.0f}%)")
