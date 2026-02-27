@@ -250,24 +250,29 @@ class Database:
 
     def delete_transaction(self, transaction_id: int) -> bool:
         """Delete a transaction by ID. Returns True if deleted, False if not found."""
-        current_bal = self.get_balance()
-        with self._conn() as conn:
-            # First, get the transaction details
-            row = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
-            if not row:
-                return False
-            
-            # Delete it
-            cursor = conn.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
-            
-            # Reverse the balance effect
-            if current_bal is not None:
-                if row["type"] == "spend":
-                    self.adjust_balance(row["amount"])  # Add back the spent amount
-                else:  # income
-                    self.adjust_balance(-row["amount"])  # Remove the income
+        # Get transaction details first
+        tx_data = self.get_transaction_by_id(transaction_id)
+        if not tx_data:
+            return False
         
-        return True
+        # Delete the transaction (separate transaction)
+        with self._conn() as conn:
+            cursor = conn.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
+            conn.commit()  # Explicit commit to ensure DELETE is persisted
+            deleted_rows = cursor.rowcount
+        
+        # Only adjust balance if deletion was successful
+        if deleted_rows > 0:
+            current_bal = self.get_balance()
+            # Reverse the balance effect in separate transaction
+            if current_bal is not None:
+                if tx_data["type"] == "spend":
+                    self.adjust_balance(tx_data["amount"])  # Add back the spent amount
+                else:  # income
+                    self.adjust_balance(-tx_data["amount"])  # Remove the income
+            return True
+        
+        return False
 
     def delete_category_transactions(self, category: str, year: int, month: int) -> int:
         """Delete all transactions in a category for a specific month. Returns count deleted."""
@@ -313,18 +318,17 @@ class Database:
         Returns the updated transaction dict, or None if not found.
         Handles balance adjustments if amount changes.
         """
-        current_bal = self.get_balance()
+        # Get original transaction first
+        original = self.get_transaction_by_id(transaction_id)
+        if not original:
+            return None
         
+        # Update the transaction (separate transaction)
         with self._conn() as conn:
-            # Get original transaction
-            row = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
-            if not row:
-                return None
-            
             # Prepare update values
-            update_amount = amount if amount is not None else row["amount"]
-            update_category = category if category is not None else row["category"]
-            update_description = description if description is not None else row["description"]
+            update_amount = amount if amount is not None else original["amount"]
+            update_category = category if category is not None else original["category"]
+            update_description = description if description is not None else original["description"]
             
             # Update the transaction
             conn.execute(
@@ -333,18 +337,20 @@ class Database:
                    WHERE id = ?""",
                 (round(abs(update_amount), 2), update_category, update_description, transaction_id)
             )
-            
-            # Handle balance adjustment if amount changed
-            if current_bal is not None and amount is not None and amount != row["amount"]:
-                delta = row["amount"] - amount  # Original amount minus new amount
-                if row["type"] == "spend":
+            conn.commit()  # Explicit commit
+        
+        # Handle balance adjustment if amount changed (separate transaction)
+        if amount is not None and amount != original["amount"]:
+            current_bal = self.get_balance()
+            if current_bal is not None:
+                delta = original["amount"] - amount  # Original amount minus new amount
+                if original["type"] == "spend":
                     self.adjust_balance(delta)  # Add back difference
                 else:  # income
                     self.adjust_balance(-delta)  # Remove difference
-            
-            # Return updated row
-            updated = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
-            return dict(updated) if updated else None
+        
+        # Return updated row
+        return self.get_transaction_by_id(transaction_id)
 
     def get_yearly_transactions(self, year: int) -> list[dict]:
         """Get all transactions for a specific year."""
