@@ -326,107 +326,131 @@ async def history(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @owner_only
 async def delete_transaction(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/delete 42 — Delete a transaction by ID"""
-    if not ctx.args:
-        await update.message.reply_text("Usage: `/delete <transaction_id>`\nGet transaction IDs from `/history`", parse_mode="Markdown")
-        return
-    
     try:
-        tx_id = int(ctx.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ Transaction ID must be a number.")
-        return
-    
-    # Get transaction before deletion
-    tx_data = db.get_transaction_by_id(tx_id)
-    
-    if not tx_data:
-        await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
-        return
-    
-    if db.delete_transaction(tx_id):
-        icon = "💸" if tx_data["type"] == "spend" else "💰"
-        await update.message.reply_text(
-            f"✅ Deleted transaction #{tx_id}\n"
-            f"{icon} *{fmt(tx_data['amount'])}* — {tx_data['description']} [{tx_data['category']}]",
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text(f"❌ Failed to delete transaction #{tx_id}")
+        logger.info(f"Delete command received from user {update.effective_user.id}")
+        
+        if not ctx.args:
+            await update.message.reply_text("Usage: `/delete <transaction_id>`\nGet transaction IDs from `/history`", parse_mode="Markdown")
+            return
+        
+        try:
+            tx_id = int(ctx.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Transaction ID must be a number.")
+            return
+        
+        logger.info(f"Attempting to delete transaction #{tx_id}")
+        
+        # Get transaction before deletion
+        tx_data = db.get_transaction_by_id(tx_id)
+        logger.info(f"Transaction found: {tx_data}")
+        
+        if not tx_data:
+            await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
+            return
+        
+        result = db.delete_transaction(tx_id)
+        logger.info(f"Delete result: {result}")
+        
+        if result:
+            icon = "💸" if tx_data["type"] == "spend" else "💰"
+            await update.message.reply_text(
+                f"✅ Deleted transaction #{tx_id}\n"
+                f"{icon} *{fmt(tx_data['amount'])}* — {tx_data['description']} [{tx_data['category']}]",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(f"❌ Failed to delete transaction #{tx_id}")
+    except Exception as e:
+        logger.error(f"Error in delete_transaction: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ An error occurred: {str(e)}")
 
 
 @owner_only
 async def edit_transaction_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/edit 42 25.50 food groceries - Edit transaction amount, category, and/or description"""
-    if not ctx.args:
-        await update.message.reply_text(
-            "Usage: `/edit <id> [amount] [category] [description]`\n"
-            "Only provide fields you want to change.\n"
-            "_Example:_ `/edit 42 25.50 food groceries`",
-            parse_mode="Markdown"
-        )
-        return
-    
     try:
-        tx_id = int(ctx.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ Transaction ID must be a number.")
-        return
-    
-    # Get original transaction
-    tx_data = db.get_transaction_by_id(tx_id)
-    
-    if not tx_data:
-        await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
-        return
-    
-    # Parse arguments
-    amount = None
-    category = None
-    description_parts = []
-    
-    for i, arg in enumerate(ctx.args[1:]):
-        if i == 0:
-            try:
-                amount = float(arg)
-                continue
-            except ValueError:
-                pass
+        logger.info(f"Edit command received from user {update.effective_user.id}")
         
-        if i == 1 or (i > 1 and category is None):
-            # Could be category or start of description
-            if arg.lower() in ["food", "transport", "shopping", "bills", "entertainment", "health", "travel", "other"]:
-                category = arg.lower()
-                continue
+        if not ctx.args:
+            await update.message.reply_text(
+                "Usage: `/edit <id> [amount] [category] [description]`\n"
+                "Only provide fields you want to change.\n"
+                "_Example:_ `/edit 42 25.50 food groceries`",
+                parse_mode="Markdown"
+            )
+            return
         
-        description_parts.append(arg)
-    
-    description = " ".join(description_parts) if description_parts else None
-    
-    # Update transaction
-    updated = db.edit_transaction(tx_id, amount, category, description)
-    
-    if updated:
-        icon = "💸" if updated["type"] == "spend" else "💰"
+        try:
+            tx_id = int(ctx.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ Transaction ID must be a number.")
+            return
         
-        # Show what changed
-        changes = []
-        if amount is not None and amount != tx_data["amount"]:
-            changes.append(f"Amount: *{fmt(tx_data['amount'])}* → *{fmt(updated['amount'])}*")
-        if category is not None and category != tx_data["category"]:
-            changes.append(f"Category: *{tx_data['category']}* → *{updated['category']}*")
-        if description is not None and description != tx_data["description"]:
-            changes.append(f"Description: _{tx_data['description']}_ → _{updated['description']}_")
+        logger.info(f"Attempting to edit transaction #{tx_id}")
         
-        change_text = "\n".join(changes) if changes else "_No changes made_"
+        # Get original transaction
+        tx_data = db.get_transaction_by_id(tx_id)
+        logger.info(f"Transaction found: {tx_data}")
         
-        await update.message.reply_text(
-            f"✅ Updated transaction #{tx_id}\n"
-            f"{icon} {fmt(updated['amount'])} [{updated['category']}]\n\n"
-            f"{change_text}",
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text(f"❌ Failed to update transaction #{tx_id}")
+        if not tx_data:
+            await update.message.reply_text(f"⚠️ Transaction #{tx_id} not found.")
+            return
+        
+        # Parse arguments
+        amount = None
+        category = None
+        description_parts = []
+        
+        for i, arg in enumerate(ctx.args[1:]):
+            if i == 0:
+                try:
+                    amount = float(arg)
+                    continue
+                except ValueError:
+                    pass
+            
+            if i == 1 or (i > 1 and category is None):
+                # Could be category or start of description
+                if arg.lower() in ["food", "transport", "shopping", "bills", "entertainment", "health", "travel", "other"]:
+                    category = arg.lower()
+                    continue
+            
+            description_parts.append(arg)
+        
+        description = " ".join(description_parts) if description_parts else None
+        
+        logger.info(f"Edit params - amount: {amount}, category: {category}, description: {description}")
+        
+        # Update transaction
+        updated = db.edit_transaction(tx_id, amount, category, description)
+        logger.info(f"Update result: {updated}")
+        
+        if updated:
+            icon = "💸" if updated["type"] == "spend" else "💰"
+            
+            # Show what changed
+            changes = []
+            if amount is not None and amount != tx_data["amount"]:
+                changes.append(f"Amount: *{fmt(tx_data['amount'])}* → *{fmt(updated['amount'])}*")
+            if category is not None and category != tx_data["category"]:
+                changes.append(f"Category: *{tx_data['category']}* → *{updated['category']}*")
+            if description is not None and description != tx_data["description"]:
+                changes.append(f"Description: _{tx_data['description']}_ → _{updated['description']}_")
+            
+            change_text = "\n".join(changes) if changes else "_No changes made_"
+            
+            await update.message.reply_text(
+                f"✅ Updated transaction #{tx_id}\n"
+                f"{icon} {fmt(updated['amount'])} [{updated['category']}]\n\n"
+                f"{change_text}",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(f"❌ Failed to update transaction #{tx_id}")
+    except Exception as e:
+        logger.error(f"Error in edit_transaction_cmd: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ An error occurred: {str(e)}")
 
 
 @owner_only
